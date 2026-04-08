@@ -12,7 +12,7 @@ on:
         default: 'latest'
 
 env:
-  IMAGE_NAME: aaronkinchen/ryanair-payments
+  IMAGE_NAME: akinchen9/ryanair-payments
   CONTEXT:    .
 
 jobs:
