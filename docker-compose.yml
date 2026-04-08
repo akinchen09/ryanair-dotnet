@@ -1,0 +1,30 @@
+version: '3.8'
+
+# Windows containers only — run Docker Desktop in Windows container mode.
+# On Mac: use GitHub Actions workflow to build & push; then pull from Docker Hub.
+
+services:
+  ryanair-payments:
+    image: aaronkinchen/ryanair-payments:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: windows/amd64
+    ports:
+      - "8080:80"
+    environment:
+      - PAYMENT_INTERVAL_MS=3000
+      - MAX_PAYMENTS_STORED=2000
+      - LOG_LEVEL=Info
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - powershell
+        - -NoProfile
+        - -Command
+        - "Invoke-WebRequest -Uri http://localhost/api/health -UseBasicParsing"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
