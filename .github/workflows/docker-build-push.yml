@@ -37,6 +37,13 @@ jobs:
           Write-Output "full=$full"     >> $env:GITHUB_OUTPUT
           Write-Output "sha_tag=$sha_tag" >> $env:GITHUB_OUTPUT
 
+      - name: Switch Docker to Windows containers
+        shell: pwsh
+        run: |
+          & "$Env:ProgramFiles\Docker\Docker\DockerCli.exe" -SwitchDaemon
+          Start-Sleep -Seconds 10
+          docker info | Select-String "OSType"
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
