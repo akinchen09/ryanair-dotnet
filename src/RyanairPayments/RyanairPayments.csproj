@@ -74,7 +74,7 @@
     </Reference>
     <!-- NuGet: New Relic Agent API -->
     <Reference Include="NewRelic.Api.Agent">
-      <HintPath>packages\NewRelic.Agent.Api.10.50.0\lib\net462\NewRelic.Api.Agent.dll</HintPath>
+      <HintPath>packages\NewRelic.Agent.Api.10.50.0\lib\net462\NewRelic.Agent.Api.dll</HintPath>
       <Private>True</Private>
     </Reference>
   </ItemGroup>

@@ -10,6 +10,9 @@ WORKDIR C:\build
 COPY src\RyanairPayments\packages.config .
 RUN nuget restore packages.config -PackagesDirectory packages
 
+# Show exact NewRelic package contents so we can confirm the correct DLL path
+RUN dir packages\NewRelic.Agent.Api.10.50.0 /s /b 2>NUL || echo "NewRelic package dir not found at expected path"
+
 # Copy full source and compile
 COPY src\RyanairPayments\ .
 RUN msbuild RyanairPayments.csproj /p:Configuration=Release /p:OutputPath=C:\out /p:DebugType=None /p:DebugSymbols=false /nologo /v:minimal
