@@ -10,15 +10,6 @@ WORKDIR C:\build
 COPY src\RyanairPayments\packages.config .
 RUN nuget restore packages.config -PackagesDirectory packages
 
-# Inspect the NewRelic DLL to confirm namespace and type names
-RUN powershell -NoProfile -Command " \
-  $dll = 'C:\build\packages\NewRelic.Agent.Api.10.50.0\lib\net462\NewRelic.Api.Agent.dll'; \
-  if (Test-Path $dll) { \
-    $asm = [System.Reflection.Assembly]::LoadFile($dll); \
-    Write-Host '=== NewRelic Types ==='; \
-    $asm.GetTypes() | Select-Object -ExpandProperty FullName | Sort-Object \
-  } else { Write-Host 'DLL not found at expected path' }"
-
 # Copy full source and compile
 COPY src\RyanairPayments\ .
 RUN msbuild RyanairPayments.csproj /p:Configuration=Release /p:OutputPath=C:\out /p:DebugType=None /p:DebugSymbols=false /nologo /v:minimal
