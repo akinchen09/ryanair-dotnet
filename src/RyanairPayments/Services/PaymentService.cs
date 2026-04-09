@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using NewRelic.Api.Agent;
+using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.Models;
 
 namespace RyanairPayments.Services

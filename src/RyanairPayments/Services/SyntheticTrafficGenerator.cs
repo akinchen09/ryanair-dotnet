@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using NewRelic.Api.Agent;
+using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.Models;
 
 namespace RyanairPayments.Services

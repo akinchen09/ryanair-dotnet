@@ -2,6 +2,7 @@ using System;
 using System.Web;
 using System.Web.Http;
 using NewRelic.Api.Agent;
+using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.App_Start;
 using RyanairPayments.Services;
 

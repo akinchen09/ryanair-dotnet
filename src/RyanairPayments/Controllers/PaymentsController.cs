@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Web.Http;
 using NewRelic.Api.Agent;
+using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.Models;
 using RyanairPayments.Services;
 
