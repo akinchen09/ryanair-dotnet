@@ -1,6 +1,7 @@
 using System;
 using System.Web;
 using System.Web.Http;
+using NewRelic.Api.Agent;
 using RyanairPayments.App_Start;
 using RyanairPayments.Services;
 
@@ -30,8 +31,17 @@ namespace RyanairPayments
         protected void Application_Error(object sender, EventArgs e)
         {
             var ex = Server.GetLastError();
-            if (ex != null)
-                Console.WriteLine($"[RyanairPayments] Unhandled error: {ex}");
+            if (ex == null) return;
+
+            // Surface all unhandled ASP.NET errors in New Relic Error Analytics
+            NewRelic.NoticeError(ex, new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["error.source"]   = "Application_Error",
+                ["error.type"]     = ex.GetType().Name,
+                ["request.path"]   = Request?.RawUrl ?? "unknown"
+            });
+
+            Console.WriteLine($"[RyanairPayments] Unhandled error: {ex}");
         }
     }
 }

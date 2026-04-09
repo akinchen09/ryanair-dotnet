@@ -72,6 +72,11 @@
       <HintPath>packages\Microsoft.Web.Infrastructure.2.0.0\lib\net40\Microsoft.Web.Infrastructure.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <!-- NuGet: New Relic Agent API -->
+    <Reference Include="NewRelic.Api.Agent">
+      <HintPath>packages\NewRelic.Api.Agent.10.41.0\lib\net45\NewRelic.Api.Agent.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App_Start\WebApiConfig.cs" />

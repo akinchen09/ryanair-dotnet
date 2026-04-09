@@ -17,7 +17,7 @@ RUN msbuild RyanairPayments.csproj /p:Configuration=Release /p:OutputPath=C:\out
 # --- Runtime Stage ---
 FROM mcr.microsoft.com/dotnet/framework/aspnet:4.8-windowsservercore-ltsc2022
 LABEL maintainer="aaronkinchen" `
-      description="Ryanair Payments Simulator - .NET Framework 4.8 ASP.NET Web API" `
+      description="Ryanair Payments Simulator - .NET Framework 4.8 ASP.NET Web API"  `
       version="1.0.0"
 
 WORKDIR C:\inetpub\wwwroot

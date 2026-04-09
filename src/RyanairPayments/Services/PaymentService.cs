@@ -2,13 +2,14 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using NewRelic.Api.Agent;
 using RyanairPayments.Models;
 
 namespace RyanairPayments.Services
 {
     /// <summary>
-    /// Thread-safe in-memory payment store. Acts as a singleton via <see cref="Instance"/>.
-    /// Caps storage at <see cref="MaxCapacity"/> entries with a rolling eviction policy.
+    /// Thread-safe in-memory payment store instrumented with New Relic custom
+    /// attributes, metrics, and custom events for every state transition.
     /// </summary>
     public sealed class PaymentService : IPaymentService
     {
@@ -16,11 +17,9 @@ namespace RyanairPayments.Services
 
         private const int MaxCapacity = 2000;
 
-        // Primary index: O(1) lookup by ID
         private readonly ConcurrentDictionary<Guid, Payment> _store
             = new ConcurrentDictionary<Guid, Payment>();
 
-        // Insertion-order queue for GetRecent() and eviction
         private readonly ConcurrentQueue<Guid> _insertionOrder
             = new ConcurrentQueue<Guid>();
 
@@ -28,6 +27,9 @@ namespace RyanairPayments.Services
 
         public int TotalCount => _store.Count;
 
+        // ─── Create ─────────────────────────────────────────────────────────────
+
+        [Trace]
         public Payment Create(PaymentRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
@@ -54,10 +56,13 @@ namespace RyanairPayments.Services
 
             _store[payment.Id] = payment;
             _insertionOrder.Enqueue(payment.Id);
-
             EvictIfOverCapacity();
+
+            RecordCreationTelemetry(payment);
             return payment;
         }
+
+        // ─── Read ────────────────────────────────────────────────────────────────
 
         public Payment GetById(Guid id)
         {
@@ -78,33 +83,36 @@ namespace RyanairPayments.Services
                 .ToList();
         }
 
+        // ─── Status update ───────────────────────────────────────────────────────
+
+        [Trace]
         public bool UpdateStatus(Guid id, PaymentStatus status,
                                  string errorCode = null, string errorMessage = null)
         {
             if (!_store.TryGetValue(id, out var payment)) return false;
 
-            payment.Status      = status;
-            payment.ErrorCode   = errorCode;
+            var previousStatus = payment.Status;
+            payment.Status       = status;
+            payment.ErrorCode    = errorCode;
             payment.ErrorMessage = errorMessage;
 
-            if (status == PaymentStatus.Captured ||
-                status == PaymentStatus.Declined  ||
-                status == PaymentStatus.Failed    ||
+            if (status == PaymentStatus.Captured  ||
+                status == PaymentStatus.Declined   ||
+                status == PaymentStatus.Failed     ||
                 status == PaymentStatus.Refunded)
             {
                 payment.ProcessedAt = DateTime.UtcNow;
             }
 
+            RecordStatusTransitionTelemetry(payment, previousStatus, errorCode, errorMessage);
             return true;
         }
+
+        // ─── Stats ───────────────────────────────────────────────────────────────
 
         public PaymentStats GetStats()
         {
             var all = _store.Values.ToList();
-
-            var byStatus = all
-                .GroupBy(p => p.Status.ToString())
-                .ToDictionary(g => g.Key, g => g.Count());
 
             var captured = all.Where(p => p.Status == PaymentStatus.Captured).ToList();
             var declined = all.Where(p => p.Status == PaymentStatus.Declined).ToList();
@@ -116,6 +124,10 @@ namespace RyanairPayments.Services
             double authRate  = authorisable > 0
                 ? Math.Round((double)captured.Count / authorisable * 100, 1)
                 : 0.0;
+
+            // Emit a real-time auth rate metric every time stats are queried
+            NewRelic.RecordMetric("Custom/Payments/AuthorisationRate", (float)authRate);
+            NewRelic.RecordMetric("Custom/Payments/TotalStored",       (float)all.Count);
 
             return new PaymentStats
             {
@@ -131,7 +143,8 @@ namespace RyanairPayments.Services
                                           .ToDictionary(g => g.Key, g => g.Count()),
                 ByType               = all.GroupBy(p => p.Type.ToString())
                                           .ToDictionary(g => g.Key, g => g.Count()),
-                ByStatus             = byStatus,
+                ByStatus             = all.GroupBy(p => p.Status.ToString())
+                                          .ToDictionary(g => g.Key, g => g.Count()),
                 ByRoute              = all.GroupBy(p => p.Route)
                                           .OrderByDescending(g => g.Count())
                                           .Take(10)
@@ -140,12 +153,168 @@ namespace RyanairPayments.Services
             };
         }
 
+        // ─── New Relic telemetry helpers ─────────────────────────────────────────
+
+        private static void RecordCreationTelemetry(Payment payment)
+        {
+            // Custom attributes on the current transaction / span
+            var txn = NewRelic.GetAgent().CurrentTransaction;
+            txn.AddCustomAttribute("payment.id",              payment.Id.ToString())
+               .AddCustomAttribute("payment.bookingReference", payment.BookingReference)
+               .AddCustomAttribute("payment.method",           payment.Method.ToString())
+               .AddCustomAttribute("payment.type",             payment.Type.ToString())
+               .AddCustomAttribute("payment.currency",         payment.Currency)
+               .AddCustomAttribute("payment.amount",           (double)payment.Amount)
+               .AddCustomAttribute("payment.route",            payment.Route)
+               .AddCustomAttribute("payment.origin",           payment.Origin)
+               .AddCustomAttribute("payment.destination",      payment.Destination)
+               .AddCustomAttribute("payment.passengerCount",   payment.PassengerCount)
+               .AddCustomAttribute("payment.acquirerBank",     payment.AcquirerBank)
+               .AddCustomAttribute("payment.merchantId",       payment.MerchantId);
+
+            // Dimensional counters — queryable in NRQL as:
+            //   SELECT sum(newrelic.timeslice.value) FROM Metric WHERE metricTimesliceName = 'Custom/Payments/Created'
+            NewRelic.RecordMetric("Custom/Payments/Created",                    1f);
+            NewRelic.RecordMetric($"Custom/Payments/Method/{payment.Method}",   1f);
+            NewRelic.RecordMetric($"Custom/Payments/Type/{payment.Type}",       1f);
+            NewRelic.RecordMetric($"Custom/Payments/Currency/{payment.Currency}", 1f);
+            NewRelic.RecordMetric($"Custom/Payments/Route/{payment.Origin}_{payment.Destination}", 1f);
+            NewRelic.RecordMetric("Custom/Payments/Amount/Submitted",           (float)Math.Abs((double)payment.Amount));
+
+            // Custom event — queryable as: SELECT * FROM PaymentCreated
+            NewRelic.RecordCustomEvent("PaymentCreated", new Dictionary<string, object>
+            {
+                ["paymentId"]        = payment.Id.ToString(),
+                ["bookingReference"] = payment.BookingReference,
+                ["amount"]           = (double)payment.Amount,
+                ["currency"]         = payment.Currency,
+                ["method"]           = payment.Method.ToString(),
+                ["type"]             = payment.Type.ToString(),
+                ["route"]            = payment.Route,
+                ["origin"]           = payment.Origin,
+                ["destination"]      = payment.Destination,
+                ["passengerCount"]   = payment.PassengerCount,
+                ["acquirerBank"]     = payment.AcquirerBank,
+                ["merchantId"]       = payment.MerchantId,
+                ["processorRef"]     = payment.ProcessorReference,
+                ["timestamp"]        = payment.CreatedAt
+            });
+        }
+
+        private static void RecordStatusTransitionTelemetry(Payment payment,
+            PaymentStatus previousStatus, string errorCode, string errorMessage)
+        {
+            var txn = NewRelic.GetAgent().CurrentTransaction;
+            txn.AddCustomAttribute("payment.id",             payment.Id.ToString())
+               .AddCustomAttribute("payment.status",         payment.Status.ToString())
+               .AddCustomAttribute("payment.previousStatus", previousStatus.ToString())
+               .AddCustomAttribute("payment.method",         payment.Method.ToString())
+               .AddCustomAttribute("payment.type",           payment.Type.ToString())
+               .AddCustomAttribute("payment.route",          payment.Route)
+               .AddCustomAttribute("payment.currency",       payment.Currency)
+               .AddCustomAttribute("payment.amount",         (double)payment.Amount);
+
+            switch (payment.Status)
+            {
+                case PaymentStatus.Authorised:
+                    NewRelic.RecordMetric("Custom/Payments/Authorised", 1f);
+                    break;
+
+                case PaymentStatus.Captured:
+                    NewRelic.RecordMetric("Custom/Payments/Captured",              1f);
+                    NewRelic.RecordMetric("Custom/Payments/Amount/Captured",       (float)payment.Amount);
+                    NewRelic.RecordMetric($"Custom/Payments/Method/{payment.Method}/Captured", 1f);
+                    NewRelic.RecordMetric($"Custom/Payments/Route/{payment.Origin}_{payment.Destination}/Captured", 1f);
+
+                    NewRelic.RecordCustomEvent("PaymentCaptured", new Dictionary<string, object>
+                    {
+                        ["paymentId"]        = payment.Id.ToString(),
+                        ["bookingReference"] = payment.BookingReference,
+                        ["amount"]           = (double)payment.Amount,
+                        ["currency"]         = payment.Currency,
+                        ["method"]           = payment.Method.ToString(),
+                        ["type"]             = payment.Type.ToString(),
+                        ["route"]            = payment.Route,
+                        ["acquirerBank"]     = payment.AcquirerBank,
+                        ["processorRef"]     = payment.ProcessorReference,
+                        ["processedAt"]      = payment.ProcessedAt ?? DateTime.UtcNow
+                    });
+                    break;
+
+                case PaymentStatus.Declined:
+                    txn.AddCustomAttribute("payment.errorCode",    errorCode)
+                       .AddCustomAttribute("payment.errorMessage", errorMessage);
+
+                    NewRelic.RecordMetric("Custom/Payments/Declined", 1f);
+                    if (!string.IsNullOrEmpty(errorCode))
+                        NewRelic.RecordMetric($"Custom/Payments/DeclineReason/{errorCode}", 1f);
+
+                    // Surface declines as noticed errors so they appear in Error Analytics
+                    NewRelic.NoticeError(
+                        errorMessage ?? "Payment declined",
+                        new Dictionary<string, string>
+                        {
+                            ["payment.id"]       = payment.Id.ToString(),
+                            ["payment.errorCode"] = errorCode ?? "UNKNOWN",
+                            ["payment.method"]   = payment.Method.ToString(),
+                            ["payment.route"]    = payment.Route,
+                            ["payment.amount"]   = payment.Amount.ToString("F2")
+                        });
+
+                    NewRelic.RecordCustomEvent("PaymentDeclined", new Dictionary<string, object>
+                    {
+                        ["paymentId"]        = payment.Id.ToString(),
+                        ["bookingReference"] = payment.BookingReference,
+                        ["amount"]           = (double)payment.Amount,
+                        ["currency"]         = payment.Currency,
+                        ["method"]           = payment.Method.ToString(),
+                        ["type"]             = payment.Type.ToString(),
+                        ["route"]            = payment.Route,
+                        ["errorCode"]        = errorCode ?? "UNKNOWN",
+                        ["errorMessage"]     = errorMessage ?? string.Empty,
+                        ["acquirerBank"]     = payment.AcquirerBank
+                    });
+                    break;
+
+                case PaymentStatus.Refunded:
+                    NewRelic.RecordMetric("Custom/Payments/Refunded",        1f);
+                    NewRelic.RecordMetric("Custom/Payments/Amount/Refunded", (float)Math.Abs((double)payment.Amount));
+
+                    NewRelic.RecordCustomEvent("PaymentRefunded", new Dictionary<string, object>
+                    {
+                        ["paymentId"]        = payment.Id.ToString(),
+                        ["bookingReference"] = payment.BookingReference,
+                        ["amount"]           = (double)Math.Abs((double)payment.Amount),
+                        ["currency"]         = payment.Currency,
+                        ["method"]           = payment.Method.ToString(),
+                        ["route"]            = payment.Route,
+                        ["originalPaymentId"] = payment.OriginalPaymentId?.ToString() ?? string.Empty
+                    });
+                    break;
+
+                case PaymentStatus.Failed:
+                    txn.AddCustomAttribute("payment.errorCode",    errorCode)
+                       .AddCustomAttribute("payment.errorMessage", errorMessage);
+
+                    NewRelic.RecordMetric("Custom/Payments/Failed", 1f);
+                    NewRelic.NoticeError(
+                        errorMessage ?? "Payment processing failed",
+                        new Dictionary<string, string>
+                        {
+                            ["payment.id"]        = payment.Id.ToString(),
+                            ["payment.errorCode"] = errorCode ?? "UNKNOWN",
+                            ["payment.route"]     = payment.Route
+                        });
+                    break;
+            }
+        }
+
+        // ─── Internal helpers ────────────────────────────────────────────────────
+
         private void EvictIfOverCapacity()
         {
             while (_store.Count > MaxCapacity && _insertionOrder.TryDequeue(out var oldId))
-            {
                 _store.TryRemove(oldId, out _);
-            }
         }
 
         private static string PickAcquirer(PaymentMethod method)
@@ -163,9 +332,7 @@ namespace RyanairPayments.Services
         private static string MaskCard(string token)
         {
             if (string.IsNullOrEmpty(token)) return null;
-            var last4 = token.Length >= 4
-                ? token.Substring(token.Length - 4)
-                : token;
+            var last4 = token.Length >= 4 ? token.Substring(token.Length - 4) : token;
             return $"****-****-****-{last4}";
         }
     }
