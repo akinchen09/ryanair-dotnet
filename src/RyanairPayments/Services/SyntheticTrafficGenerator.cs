@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using NewRelic.Api.Agent;
-using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.Models;
 
 namespace RyanairPayments.Services
@@ -111,14 +110,14 @@ namespace RyanairPayments.Services
         {
             if (_disposed) return;
 
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("SyntheticTraffic", "EmitBatch");
 
             int count = _rng.Next(1, 4);
             txn.AddCustomAttribute("batch.paymentCount", count);
             txn.AddCustomAttribute("traffic.source",     "synthetic-generator");
 
-            NewRelic.RecordMetric("Custom/SyntheticTraffic/BatchSize", count);
+            NrApi.RecordMetric("Custom/SyntheticTraffic/BatchSize", count);
 
             for (int i = 0; i < count; i++)
             {
@@ -126,7 +125,7 @@ namespace RyanairPayments.Services
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[SyntheticTraffic] Error emitting payment: {ex.Message}");
-                    NewRelic.NoticeError(ex);
+                    NrApi.NoticeError(ex);
                 }
             }
 
@@ -138,7 +137,7 @@ namespace RyanairPayments.Services
         {
             if (_disposed) return;
 
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("SyntheticTraffic", "ResolveStatuses");
 
             var pending = _paymentService.GetRecent(200);
@@ -159,12 +158,12 @@ namespace RyanairPayments.Services
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[SyntheticTraffic] Error resolving {p.Id}: {ex.Message}");
-                    NewRelic.NoticeError(ex);
+                    NrApi.NoticeError(ex);
                 }
             }
 
             txn.AddCustomAttribute("batch.resolvedCount", resolved);
-            NewRelic.RecordMetric("Custom/SyntheticTraffic/ResolvedPerTick", resolved);
+            NrApi.RecordMetric("Custom/SyntheticTraffic/ResolvedPerTick", resolved);
         }
 
         // ─── Payment generation ──────────────────────────────────────────────────
@@ -174,7 +173,7 @@ namespace RyanairPayments.Services
         [Trace]
         private void EmitPayment()
         {
-            var span = NewRelic.GetAgent().CurrentTransaction.CurrentSpan;
+            var span = NrApi.GetAgent().CurrentTransaction.CurrentSpan;
 
             int roll = _rng.Next(100);
             PaymentType type;
@@ -218,7 +217,7 @@ namespace RyanairPayments.Services
         [Trace]
         private void ResolvePayment(Guid id)
         {
-            var span    = NewRelic.GetAgent().CurrentTransaction.CurrentSpan;
+            var span    = NrApi.GetAgent().CurrentTransaction.CurrentSpan;
             var payment = _paymentService.GetById(id);
             if (payment == null) return;
 

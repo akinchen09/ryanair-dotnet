@@ -2,7 +2,6 @@ using System;
 using System.Web;
 using System.Web.Http;
 using NewRelic.Api.Agent;
-using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.App_Start;
 using RyanairPayments.Services;
 
@@ -35,7 +34,7 @@ namespace RyanairPayments
             if (ex == null) return;
 
             // Surface all unhandled ASP.NET errors in New Relic Error Analytics
-            NewRelic.NoticeError(ex, new System.Collections.Generic.Dictionary<string, string>
+            NrApi.NoticeError(ex, new System.Collections.Generic.Dictionary<string, string>
             {
                 ["error.source"]   = "Application_Error",
                 ["error.type"]     = ex.GetType().Name,

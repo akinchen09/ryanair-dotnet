@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Net;
 using System.Web.Http;
 using NewRelic.Api.Agent;
-using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.Models;
 using RyanairPayments.Services;
 
@@ -21,7 +20,7 @@ namespace RyanairPayments.Controllers
             if (limit < 1 || limit > 500)
                 return BadRequest("limit must be between 1 and 500.");
 
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("Payments", "List")
                .AddCustomAttribute("query.limit",          limit)
                .AddCustomAttribute("query.totalStored",    _payments.TotalCount)
@@ -35,7 +34,7 @@ namespace RyanairPayments.Controllers
         [HttpGet, Route("stats")]
         public IHttpActionResult GetStats()
         {
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("Payments", "Stats")
                .AddCustomAttribute("endpoint.name",     "GET /api/payments/stats")
                .AddCustomAttribute("query.totalStored", _payments.TotalCount);
@@ -59,7 +58,7 @@ namespace RyanairPayments.Controllers
         [HttpGet, Route("{id:guid}")]
         public IHttpActionResult GetById(Guid id)
         {
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("Payments", "GetById")
                .AddCustomAttribute("endpoint.name", "GET /api/payments/{id}")
                .AddCustomAttribute("payment.id",    id.ToString());
@@ -84,7 +83,7 @@ namespace RyanairPayments.Controllers
         [HttpPost, Route("")]
         public IHttpActionResult Create([FromBody] PaymentRequest request)
         {
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("Payments", "Create")
                .AddCustomAttribute("endpoint.name",   "POST /api/payments")
                .AddCustomAttribute("request.source",  "api-client");
@@ -117,7 +116,7 @@ namespace RyanairPayments.Controllers
         [HttpPatch, Route("{id:guid}/status")]
         public IHttpActionResult UpdateStatus(Guid id, [FromBody] StatusUpdateRequest update)
         {
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.SetTransactionName("Payments", "UpdateStatus")
                .AddCustomAttribute("endpoint.name", "PATCH /api/payments/{id}/status")
                .AddCustomAttribute("payment.id",    id.ToString());

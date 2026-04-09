@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using NewRelic.Api.Agent;
-using NewRelic = global::NewRelic.Api.Agent.NewRelic;
 using RyanairPayments.Models;
 
 namespace RyanairPayments.Services
@@ -127,8 +126,8 @@ namespace RyanairPayments.Services
                 : 0.0;
 
             // Emit a real-time auth rate metric every time stats are queried
-            NewRelic.RecordMetric("Custom/Payments/AuthorisationRate", (float)authRate);
-            NewRelic.RecordMetric("Custom/Payments/TotalStored",       (float)all.Count);
+            NrApi.RecordMetric("Custom/Payments/AuthorisationRate", (float)authRate);
+            NrApi.RecordMetric("Custom/Payments/TotalStored",       (float)all.Count);
 
             return new PaymentStats
             {
@@ -159,7 +158,7 @@ namespace RyanairPayments.Services
         private static void RecordCreationTelemetry(Payment payment)
         {
             // Custom attributes on the current transaction / span
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.AddCustomAttribute("payment.id",              payment.Id.ToString())
                .AddCustomAttribute("payment.bookingReference", payment.BookingReference)
                .AddCustomAttribute("payment.method",           payment.Method.ToString())
@@ -175,15 +174,15 @@ namespace RyanairPayments.Services
 
             // Dimensional counters — queryable in NRQL as:
             //   SELECT sum(newrelic.timeslice.value) FROM Metric WHERE metricTimesliceName = 'Custom/Payments/Created'
-            NewRelic.RecordMetric("Custom/Payments/Created",                    1f);
-            NewRelic.RecordMetric($"Custom/Payments/Method/{payment.Method}",   1f);
-            NewRelic.RecordMetric($"Custom/Payments/Type/{payment.Type}",       1f);
-            NewRelic.RecordMetric($"Custom/Payments/Currency/{payment.Currency}", 1f);
-            NewRelic.RecordMetric($"Custom/Payments/Route/{payment.Origin}_{payment.Destination}", 1f);
-            NewRelic.RecordMetric("Custom/Payments/Amount/Submitted",           (float)Math.Abs((double)payment.Amount));
+            NrApi.RecordMetric("Custom/Payments/Created",                    1f);
+            NrApi.RecordMetric($"Custom/Payments/Method/{payment.Method}",   1f);
+            NrApi.RecordMetric($"Custom/Payments/Type/{payment.Type}",       1f);
+            NrApi.RecordMetric($"Custom/Payments/Currency/{payment.Currency}", 1f);
+            NrApi.RecordMetric($"Custom/Payments/Route/{payment.Origin}_{payment.Destination}", 1f);
+            NrApi.RecordMetric("Custom/Payments/Amount/Submitted",           (float)Math.Abs((double)payment.Amount));
 
             // Custom event — queryable as: SELECT * FROM PaymentCreated
-            NewRelic.RecordCustomEvent("PaymentCreated", new Dictionary<string, object>
+            NrApi.RecordCustomEvent("PaymentCreated", new Dictionary<string, object>
             {
                 ["paymentId"]        = payment.Id.ToString(),
                 ["bookingReference"] = payment.BookingReference,
@@ -205,7 +204,7 @@ namespace RyanairPayments.Services
         private static void RecordStatusTransitionTelemetry(Payment payment,
             PaymentStatus previousStatus, string errorCode, string errorMessage)
         {
-            var txn = NewRelic.GetAgent().CurrentTransaction;
+            var txn = NrApi.GetAgent().CurrentTransaction;
             txn.AddCustomAttribute("payment.id",             payment.Id.ToString())
                .AddCustomAttribute("payment.status",         payment.Status.ToString())
                .AddCustomAttribute("payment.previousStatus", previousStatus.ToString())
@@ -218,16 +217,16 @@ namespace RyanairPayments.Services
             switch (payment.Status)
             {
                 case PaymentStatus.Authorised:
-                    NewRelic.RecordMetric("Custom/Payments/Authorised", 1f);
+                    NrApi.RecordMetric("Custom/Payments/Authorised", 1f);
                     break;
 
                 case PaymentStatus.Captured:
-                    NewRelic.RecordMetric("Custom/Payments/Captured",              1f);
-                    NewRelic.RecordMetric("Custom/Payments/Amount/Captured",       (float)payment.Amount);
-                    NewRelic.RecordMetric($"Custom/Payments/Method/{payment.Method}/Captured", 1f);
-                    NewRelic.RecordMetric($"Custom/Payments/Route/{payment.Origin}_{payment.Destination}/Captured", 1f);
+                    NrApi.RecordMetric("Custom/Payments/Captured",              1f);
+                    NrApi.RecordMetric("Custom/Payments/Amount/Captured",       (float)payment.Amount);
+                    NrApi.RecordMetric($"Custom/Payments/Method/{payment.Method}/Captured", 1f);
+                    NrApi.RecordMetric($"Custom/Payments/Route/{payment.Origin}_{payment.Destination}/Captured", 1f);
 
-                    NewRelic.RecordCustomEvent("PaymentCaptured", new Dictionary<string, object>
+                    NrApi.RecordCustomEvent("PaymentCaptured", new Dictionary<string, object>
                     {
                         ["paymentId"]        = payment.Id.ToString(),
                         ["bookingReference"] = payment.BookingReference,
@@ -246,12 +245,12 @@ namespace RyanairPayments.Services
                     txn.AddCustomAttribute("payment.errorCode",    errorCode)
                        .AddCustomAttribute("payment.errorMessage", errorMessage);
 
-                    NewRelic.RecordMetric("Custom/Payments/Declined", 1f);
+                    NrApi.RecordMetric("Custom/Payments/Declined", 1f);
                     if (!string.IsNullOrEmpty(errorCode))
-                        NewRelic.RecordMetric($"Custom/Payments/DeclineReason/{errorCode}", 1f);
+                        NrApi.RecordMetric($"Custom/Payments/DeclineReason/{errorCode}", 1f);
 
                     // Surface declines as noticed errors so they appear in Error Analytics
-                    NewRelic.NoticeError(
+                    NrApi.NoticeError(
                         errorMessage ?? "Payment declined",
                         new Dictionary<string, string>
                         {
@@ -262,7 +261,7 @@ namespace RyanairPayments.Services
                             ["payment.amount"]   = payment.Amount.ToString("F2")
                         });
 
-                    NewRelic.RecordCustomEvent("PaymentDeclined", new Dictionary<string, object>
+                    NrApi.RecordCustomEvent("PaymentDeclined", new Dictionary<string, object>
                     {
                         ["paymentId"]        = payment.Id.ToString(),
                         ["bookingReference"] = payment.BookingReference,
@@ -278,10 +277,10 @@ namespace RyanairPayments.Services
                     break;
 
                 case PaymentStatus.Refunded:
-                    NewRelic.RecordMetric("Custom/Payments/Refunded",        1f);
-                    NewRelic.RecordMetric("Custom/Payments/Amount/Refunded", (float)Math.Abs((double)payment.Amount));
+                    NrApi.RecordMetric("Custom/Payments/Refunded",        1f);
+                    NrApi.RecordMetric("Custom/Payments/Amount/Refunded", (float)Math.Abs((double)payment.Amount));
 
-                    NewRelic.RecordCustomEvent("PaymentRefunded", new Dictionary<string, object>
+                    NrApi.RecordCustomEvent("PaymentRefunded", new Dictionary<string, object>
                     {
                         ["paymentId"]        = payment.Id.ToString(),
                         ["bookingReference"] = payment.BookingReference,
@@ -297,8 +296,8 @@ namespace RyanairPayments.Services
                     txn.AddCustomAttribute("payment.errorCode",    errorCode)
                        .AddCustomAttribute("payment.errorMessage", errorMessage);
 
-                    NewRelic.RecordMetric("Custom/Payments/Failed", 1f);
-                    NewRelic.NoticeError(
+                    NrApi.RecordMetric("Custom/Payments/Failed", 1f);
+                    NrApi.NoticeError(
                         errorMessage ?? "Payment processing failed",
                         new Dictionary<string, string>
                         {

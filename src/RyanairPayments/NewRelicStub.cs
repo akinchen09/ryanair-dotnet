@@ -78,9 +78,11 @@ namespace NewRelic.Api.Agent
         }
     }
 
-    // ── Static entry point (mirrors NewRelic.Api.Agent.NewRelic) ─────────────────
+    // ── Static entry point ────────────────────────────────────────────────────────
+    // Named NrApi (not NewRelic) to avoid ambiguity with the NewRelic namespace.
+    // Usage in code: NrApi.RecordMetric(...), NrApi.GetAgent(), etc.
 
-    public static class NewRelic
+    public static class NrApi
     {
         public static IAgent GetAgent() => NoOpAgent.Instance;
 
